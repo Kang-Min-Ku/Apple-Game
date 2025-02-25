@@ -1,13 +1,18 @@
 import gym
 import numpy as np
 from gym import spaces
+from typing import Optional, Callable, Dict
 
 class AppleGameEnv(gym.Env):
-    def __init__(self, seed):
+    metadata = {"render_modes": ["human", "agent"]}
+
+    def __init__(self, render_mode: Optional[str] = None, limit_step: int = 200):
         super(AppleGameEnv, self).__init__()
-        
-        self.seed = seed
-        np.random.seed(self.seed)
+
+        self.render_mode = render_mode
+        self.limit_step = limit_step
+        self.current_step = 0    
+        self.info_fn = None 
 
         # game table
         self.rows = 10
@@ -19,12 +24,21 @@ class AppleGameEnv(gym.Env):
         self.action_space = spaces.MultiDiscrete([self.rows, self.cols, self.rows, self.cols])
         # self.observation_space = spaces.Box(low=1, high=9, shape=self.grid_size, dtype=torch.int32)
         self.observation_space = spaces.Box(low=1, high=9, shape=self.grid_size, dtype=np.int32)
-    
-    def reset(self):
-        # self.grid = torch.randint(1,10,self.grid_size).to(self.device)
-        self.grid = np.random.randint(1,10,self.grid_size)
 
-        return self.grid.clone()
+    
+    def reset(self, seed: Optional[int] = None, options = None):
+        # self.grid = torch.randint(1,10,self.grid_size).to(self.device)
+        
+        if seed is not None:
+            np.random.seed(seed)
+
+        self.grid = np.random.randint(1,10,self.grid_size)
+        self.current_step = 0
+        obs = self.grid.copy()
+        info = self.get_info()
+
+        return obs, info
+    
     
     def step(self, action):
         x1, y1, x2, y2 = action
@@ -39,6 +53,7 @@ class AppleGameEnv(gym.Env):
 
         reward = 0
         done = False
+        truncated = False
 
         # reward
         if step_sum == 10:
@@ -47,10 +62,17 @@ class AppleGameEnv(gym.Env):
             now_zero_count = np.count_nonzero(self.grid == 0)
             reward = now_zero_count - prev_zero_count
 
+        self.current_step += 1
+        if self.current_step > self.limit_step:
+            truncated = True
+
         if not self._has_remaining_moves():
             done = True
 
-        return self.grid, reward, done, {}
+        obs = self.grid.copy()
+        info = self.get_info()
+
+        return obs, reward, done, truncated, info
     
     def _has_remaining_moves(self):
         # check if there is any possible moves
@@ -87,7 +109,17 @@ class AppleGameEnv(gym.Env):
         
                         
     def render(self):
+        print(self.render_mode)
         print(self.grid)
+
 
     def close(self):
         pass
+
+
+    def set_info(self, info_fn: Callable[[], Dict]):
+        self.info_fn = info_fn
+
+    
+    def get_info(self):
+        return self.info_fn() if self.info_fn is not None else {}
